@@ -90,6 +90,74 @@ If you still have problems, post in [Our Subreddit](https://www.reddit.com/r/hom
 
 Please see the docs here: [README.DOCKER.md](./README.DOCKER.md)
 
+### Automatic Pagination
+
+The preview now uses Paged.js to flow rendered content through columns and onto
+new physical pages. It recalculates after text edits, file reloads, theme or CSS
+changes, and font loading. Images are loaded before layout; large images are
+constrained to the available page area. The current page width, height, padding,
+column count, and column gap are taken from the document's styles.
+
+Automatic breaks exist only in the rendered preview and PDF. The Markdown is
+not rewritten, and no `\page` or `\column` markers are inserted when saving.
+Existing explicit page and column breaks remain supported. Paragraphs, long
+tables, and oversized stat blocks can continue across generated pages; blocks
+are kept together when they fit. Printing waits for the latest layout to finish.
+
+Custom cover designs, absolute-positioned artwork, and page-specific selectors
+can require layout adjustments. Review the generated preview before exporting.
+
+### Local Markdown File Mode (No MongoDB)
+
+After installing dependencies, start the local file editor from this directory:
+
+```powershell
+npm run start:files
+```
+
+Open http://localhost:8000. The home page lists `.md` files recursively in
+`../markdown` (relative to the Homebrewery directory). Open a file to edit it,
+or use **new file** to create one. Saves and autosaves write directly to that
+file. MongoDB, accounts, Google Drive, the vault, and database-backed custom
+themes are not used. The original `npm start` database mode remains available.
+
+To choose another folder in PowerShell:
+
+```powershell
+$env:HB_FILES = 'C:\Documents\MyBrews'
+npm run start:files
+```
+
+Or pass `--hb_files` to the command:
+
+```powershell
+npm run start:files -- --hb_files="C:\Documents\MyBrews" --web_port=8001
+```
+
+Relative image links such as `![Art](assets/example.png)` resolve relative to
+the Markdown file's folder, including for nested files. Images and fonts are
+served from the selected folder; no asset upload or URL rewriting is needed.
+Files can be downloaded as Markdown using the download action.
+
+Saving adds Homebrewery's fenced `metadata` and optional `css` sections to the
+Markdown file, preserving the body, theme, language, snippets, and styles.
+Keep this folder backed up or under version control. If a file changes on disk
+after it was opened, saving is refused rather than overwriting the external
+edit. Use **Reload from disk** (the circular-arrow button) to load external
+changes into the editor and preview. It asks for confirmation before discarding
+unsaved browser edits.
+
+The **auto sync** toggle checks the open file every two seconds and when the
+browser regains focus. It updates the editor and preview after external edits
+and remembers its on/off setting. Auto sync pauses while there are unsaved
+browser edits or a save is in progress; it does not merge conflicting edits.
+This is separate from autosave, which writes browser edits to disk.
+Refresh the file list to discover files added outside Homebrewery.
+
+File mode binds to `127.0.0.1` and is intended for trusted local documents only.
+Paths are restricted to the selected folder, symbolic links are rejected,
+and existing files cannot be overwritten when creating a new document.
+
 ### Running the application on FreeBSD or FreeNAS
 
 Please see the docs here: [README.FreeBSD.md](./README.FREEBSD.md)

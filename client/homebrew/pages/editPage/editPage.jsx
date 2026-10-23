@@ -17,6 +17,10 @@ const EditPage = (props)=>{
 	};
 
 	const save = async (brew, saveToGoogle)=>{
+		if(global.config?.fileMode) {
+			const res = await request.put(`/api/update/${brew.editId}`).send(brew);
+			return _.pick(res.body, ['editId', 'shareId', 'version', 'filePath', 'updatedAt']);
+		}
 		await updateHistory(brew).catch(console.error);
 		await versionHistoryGarbageCollection().catch(console.error);
 
@@ -43,6 +47,10 @@ const EditPage = (props)=>{
 	const onSaveSuccess = (savedBrew)=>{
 		history.replaceState(null, null, `/edit/${savedBrew.editId}`);;
 	};
+	const reload = async ()=>{
+		const res = await request.get(`/api/fetch/${props.brew.editId}`);
+		return res.body.brew;
+	};
 
 	return (
 		<EditorPage
@@ -54,6 +62,7 @@ const EditPage = (props)=>{
 			brew                = {props.brew}
 			userThemes          = {props.userThemes}
 			save                = {save}
+			reload              = {global.config?.fileMode ? reload : undefined}
 			onSaveSuccess       = {onSaveSuccess}
 		></EditorPage>);
 };

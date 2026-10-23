@@ -91,7 +91,7 @@ const splitTextStyleAndMetadata = (brew)=>{
 		const index = brew.text.indexOf('\n```\n\n');
 		const metadataSection = brew.text.slice(11, index + 1);
 		const metadata = yaml.load(metadataSection);
-		Object.assign(brew, _.pick(metadata, ['title', 'description', 'renderer', 'theme', 'lang']));
+		Object.assign(brew, _.pick(metadata, ['title', 'description', 'tags', 'renderer', 'theme', 'lang']));
 		brew.snippets = yamlSnippetsToText(_.pick(metadata, ['snippets']).snippets || '');
 
 		brew.bleedSize = { ...metadata.bleedSize };
@@ -117,8 +117,11 @@ const splitTextStyleAndMetadata = (brew)=>{
 const printCurrentBrew = async ()=>{
 	if(window.typeof !== 'undefined') {
 		// fire a custom event for the print cycle
-		document.dispatchEvent(new CustomEvent('print:startprep'));
+		const preparation = [];
+		document.dispatchEvent(new CustomEvent('print:startprep', { detail: { waitUntil: (promise)=>preparation.push(promise) } }));
 		try {
+			await Promise.all(preparation);
+			await new Promise((resolve)=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
 			const iframeDoc = window.frames['BrewRenderer'].contentDocument;
 
 			// get all img elements with lazy loading (currently only elements generated through MarkedJS)

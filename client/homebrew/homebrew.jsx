@@ -12,6 +12,7 @@ import NewPage     from './pages/newPage/newPage.jsx';
 import ErrorPage   from './pages/errorPage/errorPage.jsx';
 import VaultPage   from './pages/vaultPage/vaultPage.jsx';
 import AccountPage from './pages/accountPage/accountPage.jsx';
+import FilesPage   from './pages/filesPage/filesPage.jsx';
 
 const WithRoute = ({ el: Element, ...rest })=>{
 	const params = useParams();
@@ -73,7 +74,8 @@ const Homebrew = (props)=>{
 		<Router>
 			<div className={`homebrew${(config?.deployment || config?.developmentStyle) ? ' deployment' : ''}`} style={backgroundObject()}>
 				<Routes>
-					<Route path='/'       element={<WithRoute el={HomePage} brew={brew} />} />
+					<Route path='/'       element={config?.fileMode ? <FilesPage brews={brews} /> : <WithRoute el={HomePage} brew={brew} />} />
+					{config?.fileMode && <Route path='/files' element={<FilesPage brews={brews} />} />}
 					<Route path='/*'      element={<WithRoute el={HomePage} brew={brew} />} />
 					<Route path='/legacy' element={<WithRoute el={HomePage} brew={brew} />} />
 

@@ -19,6 +19,7 @@ import { printCurrentBrew } from '@shared/helpers.js';
 
 import HeaderNav from './headerNav/headerNav.jsx';
 import safeHTML from './safeHTML.js';
+import AutomaticPages from './automaticPages.jsx';
 
 const PAGEBREAK_REGEX_V3 = /^(?=\\page(?:break)?(?: *{[^\n{}]*})?$)/m;
 const PAGEBREAK_REGEX_LEGACY = /\\page(?:break)?/m;
@@ -105,6 +106,9 @@ const BrewRenderer = (props)=>{
 	const [visiblePages, setVisiblePages] = useState([]);
 	const [centerPage, setCenterPage] = useState(1);
 	const [headerState, setHeaderState] = useState(false);
+	const [pageCount, setPageCount] = useState(1);
+	const [paginationStatus, setPaginationStatus] = useState('');
+	const automatic = props.automaticPagination !== false;
 
 	const [state, setState] = useState({
 		isMounted  : false,
@@ -132,7 +136,7 @@ const BrewRenderer = (props)=>{
 		rawPages = props.text.split(PAGEBREAK_REGEX_V3);
 	}
 
-	const handlePageVisibilityChange = (pageNum, isVisible, isCenter)=>{
+	const handlePageVisibilityChange = (pageNum, isVisible, isCenter, sourcePage = pageNum)=>{
 		setVisiblePages((prev)=>{
 			const updatedVisiblePages = new Set(prev);
 			isVisible ? updatedVisiblePages.add(pageNum) : updatedVisiblePages.delete(pageNum);
@@ -141,8 +145,14 @@ const BrewRenderer = (props)=>{
 
 		if(isCenter) {
 			setCenterPage(pageNum);
-			props.onPageChange(pageNum);
+			props.onPageChange(pageNum, sourcePage);
 		}
+	};
+	const handlePageCount = (count)=>{
+		setPageCount(count);
+		setVisiblePages((previous)=>previous.filter((page)=>page <= count));
+		setCenterPage((previous)=>Math.min(previous, count));
+		props.onPageCountChange?.(count);
 	};
 
 	const isInView = (index)=>{
@@ -165,7 +175,7 @@ const BrewRenderer = (props)=>{
 	const renderStyle = ()=>{
 		const themeStyles = props.themeBundle?.joinedStyles ?? '<style>@import url("/themes/V3/Blank/style.css");</style>';
 		const cleanStyle = safeHTML(`${themeStyles} \n\n <style> ${props.style} </style>`);
-		return <div style={{ display: 'none' }} dangerouslySetInnerHTML={{ __html: cleanStyle }} />;
+		return <div className='homebrewThemeStyles' style={{ display: 'none' }} dangerouslySetInnerHTML={{ __html: cleanStyle }} />;
 	};
 
 	const renderPage = (pageText, index)=>{
@@ -210,7 +220,7 @@ const BrewRenderer = (props)=>{
 			}
 
 			// DO NOT REMOVE!!! REQUIRED FOR BACKWARDS COMPATIBILITY WITH NON-UPGRADABLE VERSIONS OF CHROME.
-			pageText += `\n\n&nbsp;\n\\column\n&nbsp;`; //Artificial column break at page end to emulate column-fill:auto (until `wide` is used, when column-fill:balance will reappear)
+			if(!automatic) pageText += `\n\n&nbsp;\n\\column\n&nbsp;`; //Artificial column break at page end to emulate column-fill:auto (until `wide` is used, when column-fill:balance will reappear)
 
 			const html = hbfm.render(pageText, index);
 
@@ -221,6 +231,7 @@ const BrewRenderer = (props)=>{
 	const renderPages = ()=>{
 		if(props.errors?.length)
 			return renderedPages;
+		if(automatic) return rawPages.map((page, index)=>renderPage(page, index));
 
 		if(rawPages.length != renderedPages.length) { // Re-render all pages when page count changes
 			renderedPages.length = 0;
@@ -301,7 +312,7 @@ const BrewRenderer = (props)=>{
 	};
 
 	const renderedStyle = useMemo(()=>renderStyle(), [props.style, props.themeBundle]);
-	renderedPages = useMemo(()=>renderPages(), [props.text, centerPage, displayOptions]);
+	renderedPages = useMemo(()=>renderPages(), [props.text, props.renderer, props.style, props.themeBundle, centerPage, displayOptions]);
 
 	return (
 		<>
@@ -315,15 +326,16 @@ const BrewRenderer = (props)=>{
 				: null}
 
 			<ErrorBar errors={props.errors} />
+			{automatic && paginationStatus && <div className='paginationStatus' role='status' aria-live='polite'>{paginationStatus}</div>}
 			<div className='popups'>
 				<RenderWarnings />
-				<NotificationPopup />
+				{!global.config?.fileMode && <NotificationPopup />}
 			</div>
 
-			<ToolBar displayOptions={displayOptions} onDisplayOptionsChange={handleDisplayOptionsChange} visiblePages={visiblePages.length > 0 ? visiblePages : [centerPage]} totalPages={rawPages.length} headerState={headerState} setHeaderState={setHeaderState}/>
+			<ToolBar displayOptions={displayOptions} onDisplayOptionsChange={handleDisplayOptionsChange} visiblePages={visiblePages.length > 0 ? visiblePages : [centerPage]} totalPages={automatic ? pageCount : rawPages.length} headerState={headerState} setHeaderState={setHeaderState}/>
 
 			{/*render in iFrame so broken code doesn't crash the site.*/}
-			<Frame id='BrewRenderer'  title='Rendered Brew Content' initialContent={INITIAL_CONTENT}
+			<Frame id='BrewRenderer'  title='Rendered Brew Content' initialContent={global.config?.fileMode ? INITIAL_CONTENT.replace('<base target="_top">', `<base target="_top" href="${global.config.assetBase}">`) : INITIAL_CONTENT}
 				style={{ width: '100%', height: '100%', visibility: state.visibility }}
 				contentDidMount={frameDidMount}
 				onClick={emitClick}
@@ -338,10 +350,10 @@ const BrewRenderer = (props)=>{
 					{state.isMounted
 						&&
 						<>
-							{renderedStyle}
 							<div className={`pages ${displayOptions.startOnRight ? 'recto' : 'verso'}	${displayOptions.spread}`} lang={`${props.lang || 'en'}`} style={pagesStyle} ref={pagesRef}>
-								{renderedPages}
+								{automatic ? <AutomaticPages pages={renderedPages} css={`${props.themeBundle?.styles?.join('\n') || '@import url("/themes/V3/Blank/style.css");'}\n${props.style || ''}`} onPageCount={handlePageCount} onVisibilityChange={handlePageVisibilityChange} onStatus={setPaginationStatus} /> : renderedPages}
 							</div>
+							{renderedStyle}
 						</>
 					}
 				</div>

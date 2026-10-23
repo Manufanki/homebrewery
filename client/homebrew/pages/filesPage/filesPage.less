@@ -1,0 +1,29 @@
+.filesPage {
+	overflow: auto;
+	background: #f6f7f7;
+	color: #252a2d;
+
+	main { max-width: 1100px; margin: 0 auto; padding: 32px 24px; }
+	.fileHeading { display: flex; align-items: baseline; gap: 20px; flex-wrap: wrap; }
+	h1 { font-size: 28px; }
+	.fileHeading span { color: #586269; }
+	.fileToolbar, form { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; margin: 20px 0; }
+	input { min-width: 0; max-width: 100%; padding: 9px 12px; border: 1px solid #9ca9ad; border-radius: 3px; background: white; }
+	.fileToolbar input { width: 360px; }
+	form input { flex: 1; }
+	button { padding: 9px 12px; border: 1px solid #9ca9ad; border-radius: 3px; background: white; cursor: pointer; }
+	button:disabled { cursor: wait; opacity: .6; }
+	table { width: 100%; border-collapse: collapse; text-align: left; }
+	th, td { padding: 14px 10px; border-bottom: 1px solid #d4dadd; }
+	th { font-weight: bold; }
+	td:first-child { overflow-wrap: anywhere; }
+	a { color: #185b58; }
+	.fileActions { width: 100px; white-space: nowrap; }
+	.fileActions a { display: inline-block; padding: 8px; }
+	.fileError { color: #a12632; }
+	@media (max-width: 600px) {
+		main { padding: 20px 12px; }
+		form input { flex-basis: 100%; }
+		.fileToolbar input { flex: 1; width: auto; }
+	}
+}

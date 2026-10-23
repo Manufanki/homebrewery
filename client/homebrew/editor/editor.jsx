@@ -184,9 +184,10 @@ const Editor = forwardRef(
 
 			const currentPos = brewRenderer.scrollTop;
 
-			const targetPos = window.frames['BrewRenderer'].contentDocument
-				.getElementById(`p${targetPage}`)
-				.getBoundingClientRect().top;
+			const rendererDocument = window.frames['BrewRenderer'].contentDocument;
+			const targetElement = rendererDocument.querySelector(`.automaticPages > .page[data-source-page="${targetPage}"]`) || rendererDocument.getElementById(`p${targetPage}`);
+			if(!targetElement) return;
+			const targetPos = targetElement.getBoundingClientRect().top;
 
 			let scrollingTimeout;
 

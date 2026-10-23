@@ -27,6 +27,7 @@ const { both: RecentNavItem } = RecentNavItems;
 import googleDriveIcon from '../../../googleDrive.svg';
 
 const AUTOSAVE_KEY   = 'HB_editor_autoSaveOn';
+const FILE_SYNC_KEY  = 'HB_editor_fileAutoSync';
 const BREWKEY        = 'HB_newPage_content';
 const STYLEKEY       = 'HB_newPage_style';
 const SNIPKEY        = 'HB_newPage_snippets';
@@ -44,6 +45,7 @@ const EditorPage = (props)=>{
 		sandbox,
 		showFloatingButtons,
 		save,
+		reload,
 		onSaveSuccess,
 		pageName,
 		showEditorButtons,
@@ -60,6 +62,8 @@ const EditorPage = (props)=>{
 	const [HTMLErrors, setHTMLErrors]                 = useState(hbfm.validate(currentBrew.text));
 	const [saveGoogle, setSaveGoogle]                 = useState(currentBrew.googleId);
 	const [error, setError]                           = useState(null);
+	const [autoSync, setAutoSync]                     = useState(()=>!!reload && localStorage.getItem(FILE_SYNC_KEY) === 'true');
+	const [isReloading, setIsReloading]               = useState(false);
 
 	const [alertTrashedGoogleBrew, setAlertTrashedGoogleBrew]     = useState(currentBrew.trashed);
 	const [alertNoGoogleToTransfer, setAlertNoGoogleToTransfer]   = useState(false);
@@ -69,15 +73,22 @@ const EditorPage = (props)=>{
 	const [currentEditorViewPageNum, setCurrentEditorViewPageNum] = useState(1);
 	const [currentEditorCursorPageNum, setCurrentEditorCursorPageNum] = useState(1);
 	const [currentBrewRendererPageNum, setCurrentBrewRendererPageNum] = useState(1);
+	const [currentBrewRendererSourcePageNum, setCurrentBrewRendererSourcePageNum] = useState(1);
 
 	const unsavedChangesRef  = useRef(unsavedChanges); // onBeforeUnload lives outside React and needs ref to unsavedChanges
 	const warnUnsavedTimeout = useRef(null);           // timers live outside React and need ref to consistently track time
 	const lastSavedBrew      = useRef(_.cloneDeep(currentBrew));
 	const saveTimeout        = useRef(null);
 	const editorRef          = useRef(null);
+	const renderedPageCount  = useRef(brew.pageCount || 1);
+	const currentBrewRef     = useRef(currentBrew);
+	const reloadPending      = useRef(false);
+	const mounted            = useRef(true);
+	currentBrewRef.current = currentBrew;
 
 	//==--------- Page setup ----------==//
 	useEffect(()=>{
+		mounted.current = true;
 		if(useLocalStorage) loadBrewFromLocalStorage();
 		const autoSavePref = !sandbox && JSON.parse(localStorage.getItem(AUTOSAVE_KEY) ?? true);
 		setAutoSaveEnabled(autoSavePref);
@@ -99,6 +110,8 @@ const EditorPage = (props)=>{
 				return 'You have unsaved changes!';
 		};
 		return ()=>{
+			mounted.current = false;
+			clearTimeout(saveTimeout.current);
 			document.removeEventListener('keydown', handleControlKeys);
 			window.onbeforeunload = null;
 		};
@@ -151,8 +164,59 @@ const EditorPage = (props)=>{
 		setUnsavedChanges(hasChange);
 		unsavedChangesRef.current = hasChange;
 
-		if(autoSaveEnabled) trySave(false, hasChange, saveGoogle);
-	}, [currentBrew]);
+		if(autoSaveEnabled && !isReloading) trySave(false, hasChange, saveGoogle);
+	}, [currentBrew, isReloading]);
+
+	const reloadFile = useEffectEvent(async (manual = false)=>{
+		if(!reload || reloadPending.current || isSaving) return;
+		const snapshot = currentBrewRef.current;
+		const dirty = !_.isEqual(snapshot, lastSavedBrew.current);
+		if(dirty && (!manual || !window.confirm('Discard unsaved browser changes and reload this file from disk?'))) return;
+		clearTimeout(saveTimeout.current);
+		reloadPending.current = true;
+		setIsReloading(true);
+		try {
+			const updatedBrew = await reload();
+			if(!mounted.current) return;
+			if(!_.isEqual(currentBrewRef.current, snapshot)) {
+				if(manual) setError(new Error('The editor changed during reload. Your edits were kept; reload again when ready.'));
+				return;
+			}
+			if(!manual && updatedBrew.version === snapshot.version) return;
+			lastSavedBrew.current = _.cloneDeep(updatedBrew);
+			currentBrewRef.current = updatedBrew;
+			setCurrentBrew(updatedBrew);
+			unsavedChangesRef.current = false;
+			setUnsavedChanges(false);
+			setHTMLErrors(hbfm.validate(updatedBrew.text));
+			setLastSavedTime(new Date(updatedBrew.updatedAt));
+			setError(null);
+			if(updatedBrew.renderer !== snapshot.renderer || updatedBrew.theme !== snapshot.theme)
+				fetchThemeBundle(setError, setThemeBundle, updatedBrew.renderer, updatedBrew.theme);
+		} catch (err) {
+			if(mounted.current) setError(err);
+		} finally {
+			reloadPending.current = false;
+			if(mounted.current) setIsReloading(false);
+		}
+	});
+
+	useEffect(()=>{
+		if(!reload || !autoSync) return;
+		reloadFile();
+		const interval = setInterval(()=>reloadFile(), 2000);
+		const onFocus = ()=>reloadFile();
+		window.addEventListener('focus', onFocus);
+		return ()=>{
+			clearInterval(interval);
+			window.removeEventListener('focus', onFocus);
+		};
+	}, [autoSync, !!reload]);
+
+	const toggleFileSync = ()=>{
+		localStorage.setItem(FILE_SYNC_KEY, String(!autoSync));
+		setAutoSync(!autoSync);
+	};
 
 	const resetWarnUnsavedTimer = ()=>{
 		setTimeout(()=>setWarnUnsavedChanges(false), UNSAVED_WARNING_POPUP_TIMEOUT); // Hide the warning after 4 seconds
@@ -205,7 +269,7 @@ const EditorPage = (props)=>{
 
 	const trySave = useEffectEvent((forceSave = false, hasChanges = true, saveToGoogle = false)=>{
 		clearTimeout(saveTimeout.current);
-		if(isSaving) return;
+		if(isSaving || reloadPending.current) return;
 		if(!forceSave && !hasChanges) return;
 		const newTimeout = forceSave ? 0 : SAVE_TIMEOUT;
 
@@ -219,7 +283,7 @@ const EditorPage = (props)=>{
 			const brewToSave = {
 				...currentBrew,
 				text      : currentBrew.text.normalize('NFC'),
-				pageCount : ((currentBrew.renderer === 'legacy' ? currentBrew.text.match(/\\page/g) : currentBrew.text.match(/^(?=\\page(?:break)?(?: *{[^\n{}]*})?$)/gm)) || []).length + 1,
+				pageCount : renderedPageCount.current,
 				patches   : stringifyPatches(makePatches(encodeURI(lastSavedBrew.current.text.normalize('NFC')), encodeURI(currentBrew.text.normalize('NFC')))),
 				hash      : await md5(lastSavedBrew.current.text.normalize('NFC')),
 				textBin   : undefined,
@@ -370,20 +434,29 @@ const EditorPage = (props)=>{
 				<Nav.item className='brewTitle'>{currentBrew.title}</Nav.item>
 			</Nav.section>
 			<Nav.section>
-				{(pageName == 'editPage') && renderGoogleDriveIcon()}
+				{!global.config?.fileMode && (pageName == 'editPage') && renderGoogleDriveIcon()}
+				{reload && <>
+					<Nav.item title='Reload from disk' aria-label='Reload from disk' icon={`fas fa-sync${isReloading ? ' fa-spin' : ''}`} disabled={isSaving || isReloading} onClick={()=>reloadFile(true)} />
+					<Nav.item title={autoSync ? 'Auto sync from disk is on; pauses for unsaved browser edits' : 'Enable auto sync from disk'} aria-label='Auto sync from disk' aria-pressed={autoSync} color={autoSync ? 'green' : undefined} icon='fas fa-link' onClick={toggleFileSync}>auto sync</Nav.item>
+				</>}
 				{error
 					? <ErrorNavItem error={error} clearError={clearError} />
 					: <Nav.dropdown className='save-menu'>
 						{renderSaveButton()}
 						{(pageName == 'editPage') && renderAutoSaveButton()}
 					</Nav.dropdown>}
-				<NewBrewItem />
+				{global.config?.fileMode ? <Nav.item href='/files?new=1' icon='fas fa-plus'>new file</Nav.item> : <NewBrewItem />}
 				<PrintNavItem />
-				<HelpNavItem />
-				<VaultNavItem />
-				{(pageName == 'editPage') && <ShareNavItem brew={currentBrew} currentPage={currentBrewRendererPageNum} />}
-				<RecentNavItem brew={currentBrew} storageKey={(pageName == 'editPage') ? 'edit' : undefined} />
-				<AccountNavItem />
+				{global.config?.fileMode ? <>
+					<Nav.item href={`/share/${currentBrew.shareId}`} icon='fas fa-eye'>preview</Nav.item>
+					<Nav.item href={`/download/${currentBrew.editId}`} icon='fas fa-download'>download</Nav.item>
+				</> : <>
+					<HelpNavItem />
+					<VaultNavItem />
+					{(pageName == 'editPage') && <ShareNavItem brew={currentBrew} currentPage={currentBrewRendererPageNum} />}
+					<RecentNavItem brew={currentBrew} storageKey={(pageName == 'editPage') ? 'edit' : undefined} />
+					<AccountNavItem />
+				</>}
 			</Nav.section>
 		</Navbar>
 	);
@@ -427,7 +500,7 @@ const EditorPage = (props)=>{
 						onViewPageChange={setCurrentEditorViewPageNum}
 						currentEditorViewPageNum={currentEditorViewPageNum}
 						currentEditorCursorPageNum={currentEditorCursorPageNum}
-						currentBrewRendererPageNum={currentBrewRendererPageNum}
+						currentBrewRendererPageNum={currentBrewRendererSourcePageNum}
 					/>
 					<BrewRenderer
 						lang={currentBrew.lang}
@@ -436,7 +509,11 @@ const EditorPage = (props)=>{
 						renderer={currentBrew.renderer}
 						themeBundle={themeBundle}
 						errors={HTMLErrors}
-						onPageChange={setCurrentBrewRendererPageNum}
+						onPageChange={(page, sourcePage)=>{
+							setCurrentBrewRendererPageNum(page);
+							setCurrentBrewRendererSourcePageNum(sourcePage || page);
+						}}
+						onPageCountChange={(count)=>{ renderedPageCount.current = count; }}
 						currentEditorCursorPageNum={currentEditorCursorPageNum}
 						allowPrint={true} //TODO: candidate for cleanup in brewRenderer. Homepage only place where allowPrint = false. Vote OK to allow print everywhere
 					/>

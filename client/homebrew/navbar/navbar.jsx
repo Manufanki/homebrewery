@@ -14,10 +14,12 @@ const Navbar = ({ children })=>{
 				<Nav.item href='/' className='homebrewLogo'>
 					<div>The Homebrewery</div>
 				</Nav.item>
-				<Nav.item newTab={true} href='/changelog' color='purple' icon='far fa-file-alt'>
-					{`v${version}`}
-				</Nav.item>
-				<PatreonNavItem />
+				{global.config?.fileMode ? <Nav.item href='/files' icon='fas fa-folder-open'>files</Nav.item> : <>
+					<Nav.item newTab={true} href='/changelog' color='purple' icon='far fa-file-alt'>
+						{`v${version}`}
+					</Nav.item>
+					<PatreonNavItem />
+				</>}
 				{/* this.renderChromeWarning() */}
 			</Nav.section>
 			{children}

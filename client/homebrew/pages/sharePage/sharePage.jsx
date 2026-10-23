@@ -55,7 +55,7 @@ const SharePage = (props)=>{
 
 		let eventSource;
 		// Start a stream if the brew has been updated in the last month
-		if(Date.parse(props.brew?.updatedAt) > (new Date).setDate((new Date).getDate() - 30)){
+		if(!global.config?.fileMode && Date.parse(props.brew?.updatedAt) > (new Date).setDate((new Date).getDate() - 30)){
 			// listen for changes in the brew version
 			eventSource = new EventSource(`/api/stream/${props.brew.shareId}`);
 
@@ -102,11 +102,15 @@ const SharePage = (props)=>{
 			<Meta name='robots' content='noindex, nofollow' />
 			<Navbar>
 				<Nav.section className='titleSection'>
-					{disableMeta ? titleEl : <MetadataNav brew={currentBrew}>{titleEl}</MetadataNav>}
+					{disableMeta || global.config?.fileMode ? titleEl : <MetadataNav brew={currentBrew}>{titleEl}</MetadataNav>}
 				</Nav.section>
 
 				<Nav.section>
-					{currentBrew.shareId && (
+					{global.config?.fileMode ? <>
+						<PrintNavItem />
+						{renderEditLink()}
+						<Nav.item href={`/download/${currentBrew.shareId}`} icon='fas fa-download'>download</Nav.item>
+					</> : currentBrew.shareId && (
 						<>
 							<PrintNavItem />
 							<Nav.dropdown>
@@ -139,8 +143,8 @@ const SharePage = (props)=>{
 							</Nav.dropdown>
 						</>
 					)}
-					<RecentNavItem brew={currentBrew} storageKey='view' />
-					<Account />
+					{!global.config?.fileMode && <RecentNavItem brew={currentBrew} storageKey='view' />}
+					{!global.config?.fileMode && <Account />}
 				</Nav.section>
 			</Navbar>
 

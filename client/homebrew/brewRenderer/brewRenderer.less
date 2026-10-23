@@ -67,8 +67,20 @@
 
 .pane { position : relative; }
 
+.paginationStatus {
+	position   : absolute;
+	top        : 42px;
+	right      : 12px;
+	z-index    : 30;
+	padding    : 4px 8px;
+	background : white;
+	color      : #333;
+	font-size  : 12px;
+}
+
 
 @media print {
+	.paginationStatus { display: none; }
 	.toolBar { display : none; }
 	.brewRenderer {
 		height     : 100%;

@@ -3,7 +3,8 @@ import createApp from './server/app.js';
 import config from './server/config.js';
 import { createServer as createViteServer } from 'vite';
 
-const isDev = config.get('local_environments').includes(process.env.NODE_ENV);
+const fileMode = config.get('storage_mode') === 'files';
+const isDev = config.get('local_environments').includes(config.get('node_env'));
 
 async function start() {
 	let vite;
@@ -15,15 +16,17 @@ async function start() {
 		});
 	}
 
-	await DB.connect(config).catch((err)=>{
-		console.error('Database connection failed:', err);
-		process.exit(1);
-	});
+	if(!fileMode) {
+		await DB.connect(config).catch((err)=>{
+			console.error('Database connection failed:', err);
+			process.exit(1);
+		});
+	}
 
 	const app = await createApp(vite);
 
 	const PORT = process.env.PORT || config.get('web_port') || 3000;
-	app.listen(PORT, ()=>{
+	app.listen(PORT, fileMode ? '127.0.0.1' : undefined, ()=>{
 		const reset = '\x1b[0m'; // Reset to default style
 		const bright = '\x1b[1m'; // Bright (bold) style
 		const cyan = '\x1b[36m'; // Cyan color

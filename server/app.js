@@ -34,6 +34,7 @@ import cookieParser       from 'cookie-parser';
 import forceSSL           from './forcessl.mw.js';
 
 import dbCheck            from './middleware/dbCheck.js';
+import { createFileStorage, fileStorageRoutes } from './file-storage.js';
 
 import cors from 'cors';
 
@@ -43,6 +44,8 @@ export default async function createApp(vite) {
 	const nodeEnv = config.get('node_env');
 	const isProd = nodeEnv === 'production';
 	const isLocalEnvironment = config.get('local_environments').includes(nodeEnv);
+	const fileMode = config.get('storage_mode') === 'files';
+	if(fileMode && !isLocalEnvironment) throw new Error('File storage is only available in local environments.');
 
 	const sanitizeBrew = (brew, accessType)=>{
 		brew._id = undefined;
@@ -54,16 +57,24 @@ export default async function createApp(vite) {
 	};
 
 	app.set('trust proxy', 1 /* number of proxies between user and server */);
+	if(fileMode) {
+		app.set('trust proxy', false);
+		app.use((req, res, next)=>{
+			if(!['localhost', '127.0.0.1'].includes(req.hostname)) return res.status(403).json({ message: 'File mode only accepts localhost requests.' });
+			if(req.get('origin') && req.get('origin') !== `${req.protocol}://${req.get('host')}`) return res.status(403).json({ message: 'Cross-origin requests are not allowed in file mode.' });
+			next();
+		});
+	}
 
 	if(vite) {
 		app.use(vite.middlewares);
 	}
 
 	app.use('/', serveCompressedStaticAssets('build'));
-	app.use(contentNegotiation);
+	app.use((req, res, next)=>fileMode && req.path.startsWith('/files/content/') ? next() : contentNegotiation(req, res, next));
 	app.use(bodyParser.json({ limit: '25mb' }));
 	app.use(cookieParser());
-	app.use(forceSSL);
+	if(!fileMode) app.use(forceSSL);
 
 
 	const corsOptions = {
@@ -112,10 +123,12 @@ export default async function createApp(vite) {
 		return next();
 	});
 
-	app.use(homebrewApi);
-	app.use(adminApi(vite));
-	app.use(vaultApi);
-	app.use(streamApi);
+	if(!fileMode) {
+		app.use(homebrewApi);
+		app.use(adminApi(vite));
+		app.use(vaultApi);
+		app.use(streamApi);
+	}
 
 	String.prototype.replaceAll = function(s, r){return this.split(s).join(r);};
 
@@ -127,11 +140,18 @@ export default async function createApp(vite) {
 		type        : 'website'
 	};
 
-	app.use(pageRoutes({
-		defaultMetaTags,
-		HomebrewModel,
-		sanitizeBrew,
-	}));
+	if(fileMode) {
+		const directory = path.resolve(config.get('hb_files') || '../markdown');
+		const store = createFileStorage(directory, api.mergeBrewText);
+		console.log(`File storage: ${store.root}`);
+		app.use(fileStorageRoutes(store, { themeHandler: api.getThemeBundle, defaultMetaTags }));
+	} else {
+		app.use(pageRoutes({
+			defaultMetaTags,
+			HomebrewModel,
+			sanitizeBrew,
+		}));
+	}
 
 	//Robots.txt
 	app.get('/robots.txt', (req, res)=>{
@@ -227,6 +247,8 @@ export default async function createApp(vite) {
 		// Create configuration object
 		const configuration = {
 			local            : isLocalEnvironment,
+			fileMode         : fileMode,
+			assetBase        : req.assetBase || (fileMode ? '/files/content/' : undefined),
 			publicUrl        : config.get('publicUrl') ?? '',
 			baseUrl          : `${req.protocol}://${req.get('host')}`,
 			environment      : nodeEnv,
